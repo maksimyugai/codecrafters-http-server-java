@@ -12,13 +12,19 @@ public class Main {
      ServerSocket serverSocket = null;
      Socket clientSocket = null;
 
+     var response = """
+        HTTP/1.1 200 OK
+        
+        
+        """;
+
      try {
        serverSocket = new ServerSocket(4221);
        // Since the tester restarts your program quite often, setting SO_REUSEADDR
        // ensures that we don't run into 'Address already in use' errors
        serverSocket.setReuseAddress(true);
        clientSocket = serverSocket.accept(); // Wait for connection from client.
-       System.out.println("accepted new connection");
+       System.out.println(response);
      } catch (IOException e) {
        System.out.println("IOException: " + e.getMessage());
      }
