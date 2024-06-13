@@ -7,41 +7,57 @@ import java.net.Socket;
 public class Main {
   public static void main(String[] args) {
     // You can use print statements as follows for debugging, they'll be visible when running tests.
-    System.out.println("Logs from your program will appear here!");
-
-    // Uncomment this block to pass the first stage
-    //
-     ServerSocket serverSocket = null;
-     Socket clientSocket = null;
-
-     var successResponse = "HTTP/1.1 200 OK\r\n\r\n";
+     Socket clientSocket;
+     var successResponse = "HTTP/1.1 200 OK\r\n";
      var notFoundResponse = "HTTP/1.1 404 Not Found\r\n\r\n";
 
-     try {
-       serverSocket = new ServerSocket(4221);
+     try(var serverSocket = new ServerSocket(4221)) {
+
        // Since the tester restarts your program quite often, setting SO_REUSEADDR
        // ensures that we don't run into 'Address already in use' errors
        serverSocket.setReuseAddress(true);
        clientSocket = serverSocket.accept(); // Wait for connection from client.
+       var line = "";
+       var httpRequest = new StringBuilder();
 
-       var requestBuilder = new StringBuilder();
        var buffReader = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
-
-       while (buffReader.ready()) {
-         requestBuilder.append(buffReader.readLine()).append("\r\n");
+       while((line = buffReader.readLine()) != null && !line.isEmpty()) {
+         httpRequest.append(line);
        }
 
-       var path = requestBuilder.toString().split("\r\n")[0].split(" ")[1].substring(1);
+       var firstLine = getLine(httpRequest.toString(), 0);
+       var path = getPath(firstLine);
 
-       if (path.isEmpty()) {
-         System.out.println("output: " + successResponse);
-         clientSocket.getOutputStream().write(successResponse.getBytes());
+       if (path.isEmpty() || path.equals("/")) {
+         clientSocket.getOutputStream().write((successResponse + "\r\n").getBytes());
+       } else if (path.contains("/echo")) {
+         var secondArgument = path.split("/")[2];
+         clientSocket.getOutputStream().write(prepareResponse(successResponse, secondArgument).getBytes());
        } else {
-         System.out.println("output: " + notFoundResponse);
          clientSocket.getOutputStream().write(notFoundResponse.getBytes());
        }
      } catch (IOException e) {
        System.out.println("IOException: " + e.getMessage());
      }
+  }
+
+  private static String prepareResponse(String start, String body) {
+    String responseEnd = "Content-Type: text/plain\r\n"
+                         + "Content-Length: " + body.length() + "\r\n"
+                         + "\r\n"
+                         + body + "\r\n";
+    return start + responseEnd;
+  }
+
+  private static String getLine(String request, int index) {
+    return request.split("\r\n")[index];
+  }
+
+  private static String getPath(String request) {
+    return request.split(" ")[1];
+  }
+
+  private static String getVerb(String request) {
+    return request.split(" ")[0];
   }
 }
