@@ -1,8 +1,10 @@
 import java.io.BufferedReader;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
@@ -10,10 +12,11 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.zip.GZIPOutputStream;
 
 public class Main {
 
-  private static final String LF = "\n";
+  private static final String COLUMN_WITH_WHITESPACE = ": ";
   private static final String CRLF = "\r\n";
 
   private static final ExecutorService executorService = Executors.newFixedThreadPool(5);
@@ -60,7 +63,8 @@ public class Main {
       var path = getPath(requestLine);
       var headers = headers(httpRequest.toString());
       var acceptEncoding = headers.get(Header.ACCEPT_ENCODING.value);
-      var contentEncoding = acceptEncoding != null ? ContentEncoding.fromStrings(acceptEncoding.split(",")) : null;
+      var contentEncoding = acceptEncoding != null
+          ? ContentEncoding.fromStrings(acceptEncoding.split(",")) : null;
 
       if (path.isEmpty() || path.equals("/")) {
         outputStream.write((successResponse + "\r\n").getBytes());
@@ -68,24 +72,30 @@ public class Main {
         var secondArgument = path.split("/")[2];
         String response;
         if (contentEncoding != null) {
+          var compressedBody = compressString(secondArgument);
           response = ResponseBuilder.builder()
               .setResponseLine(successResponse)
-              .setBody(secondArgument)
+              .setContentLength(compressedBody.length)
               .setContentType(ContentType.TEXT)
               .setContentEncoding(contentEncoding)
               .build();
+          outputStream.write(response.getBytes());
+          outputStream.write(compressedBody);
         } else {
           response = ResponseBuilder.builder()
               .setResponseLine(successResponse)
               .setContentType(ContentType.TEXT)
               .setBody(secondArgument)
+              .setContentLength(secondArgument.length())
               .build();
+          outputStream.write(response.getBytes());
         }
-        outputStream.write(response.getBytes());
       } else if (path.contains("/user-agent")) {
         var userAgent = headers.get(Header.USER_AGENT.value);
         var response = ResponseBuilder.builder()
-            .setResponseLine(successResponse) .setBody(userAgent)
+            .setResponseLine(successResponse)
+            .setBody(userAgent)
+            .setContentLength(userAgent.length())
             .setContentType(ContentType.TEXT)
             .setContentEncoding(contentEncoding)
             .build();
@@ -102,6 +112,7 @@ public class Main {
           var response = ResponseBuilder.builder()
               .setResponseLine(successResponse)
               .setBody(content)
+              .setContentLength(content.length())
               .setContentType(ContentType.OCTET_STREAM)
               .setContentEncoding(contentEncoding)
               .build();
@@ -153,7 +164,19 @@ public class Main {
     return request.split(" ")[0];
   }
 
+  public static byte[] compressString(String str) throws IOException {
+    byte[] input = str.getBytes(StandardCharsets.UTF_8);
+
+    var baos = new ByteArrayOutputStream();
+    var gos = new GZIPOutputStream(baos);
+    gos.write(input);
+    gos.close();
+
+    return baos.toByteArray();
+  }
+
   private enum Header {
+    CONTENT_TYPE("Content-Type"),
     ACCEPT_ENCODING("Accept-Encoding"),
     CONTENT_ENCODING("Content-Encoding"),
     CONTENT_LENGTH("Content-Length"),
@@ -189,7 +212,7 @@ public class Main {
     }
 
     public static ContentEncoding fromStrings(String[] values) {
-      for(var enc : values) {
+      for (var enc : values) {
         var encoding = fromString(enc.trim());
         if (encoding != null) {
           return encoding;
@@ -207,8 +230,10 @@ public class Main {
   }
 
   private static class ResponseBuilder {
+
     private String responseLine;
     private String body;
+    private Integer contentLength;
     private ContentType contentType;
     private ContentEncoding contentEncoding;
 
@@ -223,15 +248,22 @@ public class Main {
       var builder = new StringBuilder(responseLine);
 
       if (contentType != null) {
-        builder.append("Content-Type: ").append(contentType.value).append(CRLF);
+        builder.append(Header.CONTENT_TYPE.value).append(COLUMN_WITH_WHITESPACE)
+            .append(contentType.value).append(CRLF);
       }
       if (contentEncoding != null) {
-        builder.append("Content-Encoding: ").append(contentEncoding.value).append(CRLF);
+        builder.append(Header.CONTENT_ENCODING.value).append(COLUMN_WITH_WHITESPACE)
+            .append(contentEncoding.value).append(CRLF);
       }
+      if (contentLength != null) {
+        builder.append(Header.CONTENT_LENGTH.value).append(COLUMN_WITH_WHITESPACE)
+            .append(contentLength).append(CRLF);
+      }
+
+      builder.append(CRLF);
+
       if (body != null) {
-        builder.append("Content-Length: ").append(body.getBytes().length)
-            .append(CRLF).append(CRLF)
-            .append(body).append(CRLF);
+        builder.append(body);
       }
 
       return builder.toString();
@@ -252,6 +284,11 @@ public class Main {
 
     public ResponseBuilder setBody(String body) {
       this.body = body;
+      return this;
+    }
+
+    public ResponseBuilder setContentLength(int contentLength) {
+      this.contentLength = contentLength;
       return this;
     }
 
