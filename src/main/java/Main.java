@@ -269,17 +269,9 @@ public class Main {
       return builder.toString();
     }
 
-    public String getResponseLine() {
-      return responseLine;
-    }
-
     public ResponseBuilder setResponseLine(String responseLine) {
       this.responseLine = responseLine;
       return this;
-    }
-
-    public String getBody() {
-      return body;
     }
 
     public ResponseBuilder setBody(String body) {
@@ -292,17 +284,9 @@ public class Main {
       return this;
     }
 
-    public ContentType getContentType() {
-      return contentType;
-    }
-
     public ResponseBuilder setContentType(ContentType contentType) {
       this.contentType = contentType;
       return this;
-    }
-
-    public ContentEncoding getContentEncoding() {
-      return contentEncoding;
     }
 
     public ResponseBuilder setContentEncoding(ContentEncoding contentEncoding) {
