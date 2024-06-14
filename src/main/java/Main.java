@@ -3,6 +3,9 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
@@ -18,11 +21,14 @@ public class Main {
        // ensures that we don't run into 'Address already in use' errors
        serverSocket.setReuseAddress(true);
 
+       System.out.println("args: " + Arrays.toString(args));
+
        while(true) {
          var clientSocket = serverSocket.accept(); // Wait for connection from client.
          executorService.submit(() -> {
            try {
-             handleRequest(clientSocket);
+             var filepath = args.length > 1 ? args[1] : "/tmp";
+             handleRequest(clientSocket, filepath);
            } catch (IOException e) {
              System.out.println("IOException: " + e.getMessage());
            }
@@ -33,7 +39,7 @@ public class Main {
      }
   }
 
-  private static void handleRequest(Socket clientSocket) throws IOException {
+  private static void handleRequest(Socket clientSocket, String filepath) throws IOException {
     var successResponse = "HTTP/1.1 200 OK\r\n";
     var notFoundResponse = "HTTP/1.1 404 Not Found\r\n\r\n";
 
@@ -54,18 +60,30 @@ public class Main {
     } else if (path.contains("/echo")) {
       var secondArgument = path.split("/")[2];
       clientSocket.getOutputStream()
-          .write(prepareResponse(successResponse, secondArgument).getBytes());
+          .write(prepareResponse(successResponse, secondArgument, "text/plain").getBytes());
     } else if (path.contains("/user-agent")) {
       var userAgent = headers.get("User-Agent");
-      clientSocket.getOutputStream().write(prepareResponse(successResponse, userAgent).getBytes());
+      clientSocket.getOutputStream().write(prepareResponse(successResponse, userAgent, "text/plain").getBytes());
+    } else if (path.contains("/files")) {
+      var absolutePath = Path.of(filepath, path.split("/")[2]).toAbsolutePath();
+      try {
+        var content = readFile(absolutePath);
+        clientSocket.getOutputStream().write(prepareResponse(successResponse, content, "application/octet-stream").getBytes());
+      } catch(IOException e) {
+        clientSocket.getOutputStream().write(notFoundResponse.getBytes());
+      }
     } else {
       clientSocket.getOutputStream().write(notFoundResponse.getBytes());
     }
   }
 
-  private static String prepareResponse(String start, String body) {
-    String responseEnd = "Content-Type: text/plain\r\n"
-                         + "Content-Length: " + body.length() + "\r\n"
+  private static String readFile(Path absPath) throws IOException {
+    return Files.readString(absPath);
+  }
+
+  private static String prepareResponse(String start, String body, String contentType) {
+    String responseEnd = "Content-Type: " + contentType + "\r\n"
+                         + "Content-Length: " + body.getBytes().length + "\r\n"
                          + "\r\n"
                          + body + "\r\n";
     return start + responseEnd;
