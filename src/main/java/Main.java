@@ -59,7 +59,8 @@ public class Main {
       var verb = getVerb(requestLine);
       var path = getPath(requestLine);
       var headers = headers(httpRequest.toString());
-      var contentEncoding = ContentEncoding.fromString(headers.get(Header.ACCEPT_ENCODING.value));
+      var acceptEncoding = headers.get(Header.ACCEPT_ENCODING.value);
+      var contentEncoding = acceptEncoding != null ? ContentEncoding.fromStrings(acceptEncoding.split(",")) : null;
 
       if (path.isEmpty() || path.equals("/")) {
         outputStream.write((successResponse + "\r\n").getBytes());
@@ -84,10 +85,10 @@ public class Main {
       } else if (path.contains("/user-agent")) {
         var userAgent = headers.get(Header.USER_AGENT.value);
         var response = ResponseBuilder.builder()
-            .setResponseLine(successResponse)
-            .setBody(userAgent)
+            .setResponseLine(successResponse) .setBody(userAgent)
             .setContentType(ContentType.TEXT)
-            .setContentEncoding(contentEncoding).build();
+            .setContentEncoding(contentEncoding)
+            .build();
         outputStream.write(response.getBytes());
       } else if (path.contains("/files")) {
         var absolutePath = Path.of(filepath, path.split("/")[2]).toAbsolutePath();
@@ -102,7 +103,8 @@ public class Main {
               .setResponseLine(successResponse)
               .setBody(content)
               .setContentType(ContentType.OCTET_STREAM)
-              .setContentEncoding(contentEncoding).build();
+              .setContentEncoding(contentEncoding)
+              .build();
           outputStream.write(response.getBytes());
         }
       } else {
@@ -184,6 +186,16 @@ public class Main {
 
     ContentEncoding(String value) {
       this.value = value;
+    }
+
+    public static ContentEncoding fromStrings(String[] values) {
+      for(var enc : values) {
+        var encoding = fromString(enc.trim());
+        if (encoding != null) {
+          return encoding;
+        }
+      }
+      return null;
     }
 
     public static ContentEncoding fromString(String value) {
