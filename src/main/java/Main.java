@@ -3,6 +3,8 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.util.HashMap;
+import java.util.Map;
 
 public class Main {
   public static void main(String[] args) {
@@ -22,17 +24,22 @@ public class Main {
 
        var buffReader = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
        while((line = buffReader.readLine()) != null && !line.isEmpty()) {
-         httpRequest.append(line);
+         httpRequest.append(line).append("\n");
        }
 
        var firstLine = getLine(httpRequest.toString(), 0);
        var path = getPath(firstLine);
+       var headers = headers(httpRequest.toString());
 
        if (path.isEmpty() || path.equals("/")) {
          clientSocket.getOutputStream().write((successResponse + "\r\n").getBytes());
        } else if (path.contains("/echo")) {
          var secondArgument = path.split("/")[2];
-         clientSocket.getOutputStream().write(prepareResponse(successResponse, secondArgument).getBytes());
+         clientSocket.getOutputStream()
+             .write(prepareResponse(successResponse, secondArgument).getBytes());
+       } else if (path.contains("/user-agent")) {
+         var userAgent = headers.get("User-Agent");
+         clientSocket.getOutputStream().write(prepareResponse(successResponse, userAgent).getBytes());
        } else {
          clientSocket.getOutputStream().write(notFoundResponse.getBytes());
        }
@@ -49,8 +56,19 @@ public class Main {
     return start + responseEnd;
   }
 
+  private static Map<String, String> headers(String request) {
+    var headers = request.split("\n");
+    var headersMap = new HashMap<String, String>();
+    for (var header : headers) {
+      if (!header.contains(": ")) continue;
+      var headerParts = header.split(": ");
+      headersMap.put(headerParts[0], headerParts[1]);
+    }
+    return headersMap;
+  }
+
   private static String getLine(String request, int index) {
-    return request.split("\r\n")[index];
+    return request.split("\n")[index];
   }
 
   private static String getPath(String request) {
