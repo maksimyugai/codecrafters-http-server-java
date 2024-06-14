@@ -13,7 +13,7 @@ import java.util.concurrent.Executors;
 
 public class Main {
 
-  private static final ExecutorService executorService = Executors.newFixedThreadPool(10);
+  private static final ExecutorService executorService = Executors.newFixedThreadPool(5);
 
   public static void main(String[] args) {
      try(var serverSocket = new ServerSocket(4221)) {
@@ -31,6 +31,7 @@ public class Main {
              handleRequest(clientSocket, filepath);
            } catch (IOException e) {
              System.out.println("IOException: " + e.getMessage());
+             Thread.currentThread().interrupt();
            }
          });
        }
@@ -41,40 +42,61 @@ public class Main {
 
   private static void handleRequest(Socket clientSocket, String filepath) throws IOException {
     var successResponse = "HTTP/1.1 200 OK\r\n";
+    var createdResponse = "HTTP/1.1 201 Created\r\n\r\n";
     var notFoundResponse = "HTTP/1.1 404 Not Found\r\n\r\n";
 
-    var line = "";
-    var httpRequest = new StringBuilder();
+    var bufferedReader = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
 
-    var buffReader = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
-    while((line = buffReader.readLine()) != null && !line.isEmpty()) {
-      httpRequest.append(line).append("\n");
+    var httpRequest = new StringBuilder();
+    String line;
+    while ((line = bufferedReader.readLine()) != null && !line.isEmpty()) {
+      httpRequest.append(line).append("\r\n");
     }
 
-    var firstLine = getLine(httpRequest.toString(), 0);
-    var path = getPath(firstLine);
+    System.out.println("input: \n" + httpRequest);
+
+    var requestLine = getLine(httpRequest.toString(), 0);
+    var verb = getVerb(requestLine);
+    var path = getPath(requestLine);
     var headers = headers(httpRequest.toString());
 
+    var outputStream = clientSocket.getOutputStream();
     if (path.isEmpty() || path.equals("/")) {
-      clientSocket.getOutputStream().write((successResponse + "\r\n").getBytes());
+      outputStream.write((successResponse + "\r\n").getBytes());
     } else if (path.contains("/echo")) {
       var secondArgument = path.split("/")[2];
-      clientSocket.getOutputStream()
-          .write(prepareResponse(successResponse, secondArgument, "text/plain").getBytes());
+      outputStream.write(prepareResponse(successResponse, secondArgument, "text/plain").getBytes());
     } else if (path.contains("/user-agent")) {
       var userAgent = headers.get("User-Agent");
-      clientSocket.getOutputStream().write(prepareResponse(successResponse, userAgent, "text/plain").getBytes());
+      outputStream.write(prepareResponse(successResponse, userAgent, "text/plain").getBytes());
+    } else if (path.contains("/files") && verb.equals("POST")) {
+      var absolutePath = Path.of(filepath, path.split("/")[2]).toAbsolutePath();
+      try {
+        var contentLength = Integer.parseInt(headers.get("Content-Length"));
+        var body = readBody(bufferedReader, contentLength);
+        Files.writeString(absolutePath, body);
+        outputStream.write(createdResponse.getBytes());
+      } catch(IOException e) {
+        outputStream.write(notFoundResponse.getBytes());
+      }
     } else if (path.contains("/files")) {
       var absolutePath = Path.of(filepath, path.split("/")[2]).toAbsolutePath();
       try {
         var content = readFile(absolutePath);
-        clientSocket.getOutputStream().write(prepareResponse(successResponse, content, "application/octet-stream").getBytes());
+        outputStream.write(prepareResponse(successResponse, content, "application/octet-stream").getBytes());
       } catch(IOException e) {
-        clientSocket.getOutputStream().write(notFoundResponse.getBytes());
+        outputStream.write(notFoundResponse.getBytes());
       }
     } else {
-      clientSocket.getOutputStream().write(notFoundResponse.getBytes());
+      outputStream.write(notFoundResponse.getBytes());
     }
+    bufferedReader.close();
+  }
+
+  private static String readBody(BufferedReader bufferedReader, int contentLength) throws IOException {
+    var body = new char[contentLength];
+    bufferedReader.read(body, 0, contentLength);
+    return new String(body);
   }
 
   private static String readFile(Path absPath) throws IOException {
@@ -90,7 +112,7 @@ public class Main {
   }
 
   private static Map<String, String> headers(String request) {
-    var headers = request.split("\n");
+    var headers = request.split("\r\n");
     var headersMap = new HashMap<String, String>();
     for (var header : headers) {
       if (!header.contains(": ")) continue;
