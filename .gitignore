@@ -2,3 +2,6 @@ java_http.jar
 target/*
 target/
 .idea/
+.project
+.classpath
+.settings/
