@@ -134,8 +134,8 @@ public class Main {
     } catch (IOException e) {
       outputStream.write(getNotFoundString().getBytes());
     }
-//
-//    outputStream.close();
+
+    outputStream.close();
 //    bufferedReader.close();
 //    clientSocket.close();
   }
