@@ -1,5 +1,9 @@
+import static util.HttpUtil.CRLF;
+import static util.HttpUtil.getCreatedString;
 import static util.HttpUtil.getLine;
+import static util.HttpUtil.getNotFoundString;
 import static util.HttpUtil.getPath;
+import static util.HttpUtil.getSuccessString;
 import static util.HttpUtil.getVerb;
 import static util.HttpUtil.readBody;
 import static util.HttpUtil.readFile;
@@ -24,7 +28,7 @@ import model.HttpMethods;
 public class Main {
 
   private static final ExecutorService executorService =
-      Executors.newFixedThreadPool(5);
+      Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
 
   public static void main(String[] args) {
     try (var serverSocket = new ServerSocket(4221)) {
@@ -49,21 +53,23 @@ public class Main {
 
   private static void handleRequest(Socket clientSocket, String filepath)
       throws IOException {
-    var successResponse = "HTTP/1.1 200 OK\r\n";
-    var createdResponse = "HTTP/1.1 201 Created\r\n\r\n";
-    var notFoundResponse = "HTTP/1.1 404 Not Found\r\n\r\n";
-
     var bufferedReader = new BufferedReader(
         new InputStreamReader(clientSocket.getInputStream())
     );
 
     var httpRequest = new StringBuilder();
-    var headers = headers(httpRequest.toString());
 
     String line;
     while ((line = bufferedReader.readLine()) != null && !line.isEmpty()) {
-      httpRequest.append(line).append("\r\n");
+      httpRequest.append(line).append(CRLF);
       System.out.println("Request line: " + line);
+    }
+
+    var headers = headers(httpRequest.toString());
+
+    if (headers.containsKey("Connection") && headers.get("Connection").equalsIgnoreCase("close")) {
+      bufferedReader.close();
+      clientSocket.close();
     }
 
     var outputStream = clientSocket.getOutputStream();
@@ -77,14 +83,14 @@ public class Main {
           : null;
 
       if (path.isEmpty() || path.equals("/")) {
-        outputStream.write((successResponse + "\r\n").getBytes());
+        outputStream.write((getSuccessString() + CRLF).getBytes());
       } else if (path.contains("/echo")) {
         var secondArgument = path.split("/")[2];
         String response;
         if (contentEncoding != null) {
           var compressedBody = compressString(secondArgument);
           response = ResponseBuilder.builder()
-              .setResponseLine(successResponse)
+              .setResponseLine(getSuccessString())
               .setContentLength(compressedBody.length)
               .setContentType(ContentTypes.TEXT)
               .setContentEncoding(contentEncoding)
@@ -93,7 +99,7 @@ public class Main {
           outputStream.write(compressedBody);
         } else {
           response = ResponseBuilder.builder()
-              .setResponseLine(successResponse)
+              .setResponseLine(getSuccessString())
               .setContentType(ContentTypes.TEXT)
               .setBody(secondArgument)
               .setContentLength(secondArgument.length())
@@ -102,7 +108,7 @@ public class Main {
         }
       } else if (path.contains("/user-agent")) {
         var userAgent = headers.get(Headers.USER_AGENT.getValue());
-        var response = ResponseBuilder.builder(successResponse, userAgent, userAgent.length(), ContentTypes.TEXT, contentEncoding).build();
+        var response = ResponseBuilder.builder(getSuccessString(), userAgent, userAgent.length(), ContentTypes.TEXT, contentEncoding).build();
         outputStream.write(response.getBytes());
       } else if (path.contains("/files")) {
         var absolutePath = Path.of(
@@ -115,20 +121,21 @@ public class Main {
           );
           var body = readBody(bufferedReader, contentLength);
           Files.writeString(absolutePath, body);
-          outputStream.write(createdResponse.getBytes());
+          outputStream.write(getCreatedString().getBytes());
         } else {
           var content = readFile(absolutePath);
-          var response = ResponseBuilder.builder(successResponse, content, content.length(), ContentTypes.OCTET_STREAM, contentEncoding).build();
+          var response = ResponseBuilder.builder(getSuccessString(), content, content.length(), ContentTypes.OCTET_STREAM, contentEncoding).build();
           outputStream.write(response.getBytes());
         }
       } else {
-        outputStream.write(notFoundResponse.getBytes());
+        outputStream.write(getNotFoundString().getBytes());
       }
     } catch (IOException e) {
-      outputStream.write(notFoundResponse.getBytes());
+      outputStream.write(getNotFoundString().getBytes());
     }
 
     outputStream.close();
     bufferedReader.close();
+    clientSocket.close();
   }
 }

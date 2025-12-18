@@ -14,6 +14,11 @@ import model.HttpMethods;
 
 public final class HttpUtil {
 
+  public static final String COLUMN_WITH_WHITESPACE = ": ";
+  public static final String CR = "\r";
+  public static final String LF = "\n";
+  public static final String CRLF = CR + LF;
+
   private HttpUtil() {}
 
   public static String readBody(
@@ -30,7 +35,7 @@ public final class HttpUtil {
   }
 
   public static Map<String, String> headers(String request) {
-    var headers = request.split("\r\n");
+    var headers = request.split(CRLF);
     var headersMap = new HashMap<String, String>();
     for (var header : headers) {
       if (!header.contains(": ")) {
@@ -43,7 +48,7 @@ public final class HttpUtil {
   }
 
   public static String getLine(String request, int index) {
-    return request.split("\n")[index];
+    return request.split(LF)[index];
   }
 
   public static String getPath(String request) {
@@ -67,5 +72,17 @@ public final class HttpUtil {
 
   public boolean isNewRequest(String line) {
     return Arrays.stream(HttpMethods.values()).anyMatch(verb -> verb.name().equals(line));
+  }
+
+  public static String getSuccessString() {
+    return "HTTP/1.1 200 OK" + CRLF;
+  }
+
+  public static String getNotFoundString() {
+    return "HTTP/1.1 404 Not Found" + CRLF + CRLF;
+  }
+
+  public static String getCreatedString() {
+    return "HTTP/1.1 201 Created" + CRLF + CRLF;
   }
 }

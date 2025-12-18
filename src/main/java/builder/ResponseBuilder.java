@@ -1,13 +1,13 @@
 package builder;
 
+import static util.HttpUtil.COLUMN_WITH_WHITESPACE;
+import static util.HttpUtil.CRLF;
+
 import model.ContentEncodings;
 import model.ContentTypes;
 import model.Headers;
 
 public class ResponseBuilder {
-
-  private static final String COLUMN_WITH_WHITESPACE = ": ";
-  private static final String CRLF = "\r\n";
 
   private String responseLine;
   private String body;
