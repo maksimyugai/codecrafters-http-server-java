@@ -135,7 +135,7 @@ public class Main {
       outputStream.write(getNotFoundString().getBytes());
     }
 
-    outputStream.close();
+//    outputStream.close();
 //    bufferedReader.close();
 //    clientSocket.close();
   }
