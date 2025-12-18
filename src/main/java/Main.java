@@ -67,7 +67,8 @@ public class Main {
 
     var headers = headers(httpRequest.toString());
 
-    if (headers.containsKey("Connection") && headers.get("Connection").equalsIgnoreCase("close")) {
+    if (headers.containsKey(Headers.CONNECTION.getValue())
+        && headers.get(Headers.CONNECTION.getValue()).equalsIgnoreCase("close")) {
       bufferedReader.close();
       clientSocket.close();
     }
