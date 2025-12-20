@@ -1,4 +1,5 @@
 import static util.HttpUtil.CRLF;
+import static util.HttpUtil.LF;
 import static util.HttpUtil.getCreatedString;
 import static util.HttpUtil.getLine;
 import static util.HttpUtil.getNotFoundString;
@@ -13,6 +14,7 @@ import static util.HttpUtil.compressString;
 import builder.ResponseBuilder;
 import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.ServerSocket;
 import java.net.Socket;
@@ -53,90 +55,97 @@ public class Main {
 
   private static void handleRequest(Socket clientSocket, String filepath)
       throws IOException {
-    var bufferedReader = new BufferedReader(
-        new InputStreamReader(clientSocket.getInputStream())
-    );
+    var inputStream = clientSocket.getInputStream();
 
-    var httpRequest = new StringBuilder();
+    while (true) {
+      var bufferedReader = new BufferedReader(new InputStreamReader(inputStream));
 
-    String line;
-    while ((line = bufferedReader.readLine()) != null && !line.isEmpty()) {
-      httpRequest.append(line).append(CRLF);
-      System.out.println("Request line: " + line);
-    }
+      var httpRequest = new StringBuilder();
 
-    var headers = headers(httpRequest.toString());
+      String line;
+      while (!(line = bufferedReader.readLine()).isEmpty()) {
+        httpRequest.append(line).append(LF);
+        System.out.println("Request line: " + line);
+      }
 
-    if (headers.containsKey(Headers.CONNECTION.getValue())
-        && headers.get(Headers.CONNECTION.getValue()).equalsIgnoreCase("close")) {
-      bufferedReader.close();
-      clientSocket.close();
-    }
+      var headers = headers(httpRequest.toString());
 
-    var outputStream = clientSocket.getOutputStream();
-    try {
-      var requestLine = getLine(httpRequest.toString(), 0);
-      var verb = getVerb(requestLine);
-      var path = getPath(requestLine);
-      var acceptEncoding = headers.get(Headers.ACCEPT_ENCODING.getValue());
-      var contentEncoding = acceptEncoding != null
-          ? ContentEncodings.fromStrings(acceptEncoding.split(","))
-          : null;
+      if (headers.containsKey(Headers.CONNECTION.getValue())
+          && headers.get(Headers.CONNECTION.getValue()).equalsIgnoreCase("close")) {
+        bufferedReader.close();
+        clientSocket.close();
+      }
 
-      if (path.isEmpty() || path.equals("/")) {
-        outputStream.write((getSuccessString() + CRLF).getBytes());
-      } else if (path.contains("/echo")) {
-        var secondArgument = path.split("/")[2];
-        String response;
-        if (contentEncoding != null) {
-          var compressedBody = compressString(secondArgument);
-          response = ResponseBuilder.builder()
+      var outputStream = clientSocket.getOutputStream();
+      try {
+        var requestLine = getLine(httpRequest.toString(), 0);
+        var verb = getVerb(requestLine);
+        var path = getPath(requestLine);
+        var acceptEncoding = headers.get(Headers.ACCEPT_ENCODING.getValue());
+        var contentEncoding = acceptEncoding != null
+            ? ContentEncodings.fromStrings(acceptEncoding.split(","))
+            : null;
+
+        if (path.isEmpty() || path.equals("/")) {
+          System.out.println(Thread.currentThread().getName() + " served request: " + requestLine);
+          var response = ResponseBuilder.builder()
               .setResponseLine(getSuccessString())
-              .setContentLength(compressedBody.length)
-              .setContentType(ContentTypes.TEXT)
               .setContentEncoding(contentEncoding)
               .build();
           outputStream.write(response.getBytes());
-          outputStream.write(compressedBody);
-        } else {
-          response = ResponseBuilder.builder()
-              .setResponseLine(getSuccessString())
-              .setContentType(ContentTypes.TEXT)
-              .setBody(secondArgument)
-              .setContentLength(secondArgument.length())
-              .build();
+        } else if (path.contains("/echo")) {
+          var secondArgument = path.split("/")[2];
+          String response;
+          if (contentEncoding != null) {
+            var compressedBody = compressString(secondArgument);
+            response = ResponseBuilder.builder()
+                .setResponseLine(getSuccessString())
+                .setContentLength(compressedBody.length)
+                .setContentType(ContentTypes.TEXT)
+                .setContentEncoding(contentEncoding)
+                .build();
+            outputStream.write(response.getBytes());
+            outputStream.write(compressedBody);
+          } else {
+            response = ResponseBuilder.builder()
+                .setResponseLine(getSuccessString())
+                .setContentType(ContentTypes.TEXT)
+                .setBody(secondArgument)
+                .setContentLength(secondArgument.length())
+                .build();
+            outputStream.write(response.getBytes());
+          }
+        } else if (path.contains("/user-agent")) {
+          var userAgent = headers.get(Headers.USER_AGENT.getValue());
+          var response = ResponseBuilder.builder(getSuccessString(), userAgent, userAgent.length(),
+              ContentTypes.TEXT, contentEncoding).build();
           outputStream.write(response.getBytes());
-        }
-      } else if (path.contains("/user-agent")) {
-        var userAgent = headers.get(Headers.USER_AGENT.getValue());
-        var response = ResponseBuilder.builder(getSuccessString(), userAgent, userAgent.length(), ContentTypes.TEXT, contentEncoding).build();
-        outputStream.write(response.getBytes());
-      } else if (path.contains("/files")) {
-        var absolutePath = Path.of(
-            filepath,
-            path.split("/")[2]
-        ).toAbsolutePath();
-        if (verb.equalsIgnoreCase(HttpMethods.POST.name())) {
-          var contentLength = Integer.parseInt(
-              headers.get(Headers.CONTENT_LENGTH.getValue())
-          );
-          var body = readBody(bufferedReader, contentLength);
-          Files.writeString(absolutePath, body);
-          outputStream.write(getCreatedString().getBytes());
+        } else if (path.contains("/files")) {
+          var absolutePath = Path.of(
+              filepath,
+              path.split("/")[2]
+          ).toAbsolutePath();
+          if (verb.equalsIgnoreCase(HttpMethods.POST.name())) {
+            var contentLength = Integer.parseInt(
+                headers.get(Headers.CONTENT_LENGTH.getValue())
+            );
+            var body = readBody(bufferedReader, contentLength);
+            Files.writeString(absolutePath, body);
+            outputStream.write(getCreatedString().getBytes());
+          } else {
+            var content = readFile(absolutePath);
+            var response = ResponseBuilder.builder(getSuccessString(), content, content.length(),
+                ContentTypes.OCTET_STREAM, contentEncoding).build();
+            outputStream.write(response.getBytes());
+          }
         } else {
-          var content = readFile(absolutePath);
-          var response = ResponseBuilder.builder(getSuccessString(), content, content.length(), ContentTypes.OCTET_STREAM, contentEncoding).build();
-          outputStream.write(response.getBytes());
+          outputStream.write(getNotFoundString().getBytes());
         }
-      } else {
+      } catch (IOException e) {
         outputStream.write(getNotFoundString().getBytes());
       }
-    } catch (IOException e) {
-      outputStream.write(getNotFoundString().getBytes());
-    }
 
-//    outputStream.close();
-//    bufferedReader.close();
-//    clientSocket.close();
+      outputStream.flush();
+    }
   }
 }

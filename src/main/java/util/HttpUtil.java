@@ -35,7 +35,7 @@ public final class HttpUtil {
   }
 
   public static Map<String, String> headers(String request) {
-    var headers = request.split(CRLF);
+    var headers = request.split(LF);
     var headersMap = new HashMap<String, String>();
     for (var header : headers) {
       if (!header.contains(": ")) {
